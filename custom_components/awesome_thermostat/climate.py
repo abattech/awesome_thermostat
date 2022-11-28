@@ -482,8 +482,12 @@ class AwesomeThermostat(ClimateEntity, RestoreEntity):
         """Handle window changes."""
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
+        if new_state is not None:
+            await self._async_ensure_switch_state()
+            await self._async_control_heating()
         if new_state is None or old_state is None or new_state.state == old_state.state:
             return
+        return # disables the orig code
         if not self._saved_hvac_mode:
             self._saved_hvac_mode = self._hvac_mode
         if new_state.state == STATE_OFF:
@@ -493,6 +497,14 @@ class AwesomeThermostat(ClimateEntity, RestoreEntity):
             await self.async_set_hvac_mode(HVAC_MODE_OFF)
         else:
             return
+
+
+    async def _async_is_paused(self):
+        if self._is_device_active and self.hass.states.is_state(self.windows_entity_id, STATE_ON):
+            _LOGGER.info("Heater device was active with windows sensore \"on\". Turning it off...")
+            await self._async_heater_turn_off()
+            return True
+        return False
 
     async def _async_motion_changed(self, event):
         """Handle motion changes."""
@@ -575,6 +587,9 @@ class AwesomeThermostat(ClimateEntity, RestoreEntity):
                 )
 
             if not self._active or self._hvac_mode == HVAC_MODE_OFF:
+                return
+
+            if await self._async_is_paused():
                 return
 
             # If the `force` argument is True, we
